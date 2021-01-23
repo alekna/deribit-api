@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/chuckpreslar/emission"
 	"github.com/frankrap/deribit-api/models"
+	"github.com/jpillora/backoff"
 	"github.com/sourcegraph/jsonrpc2"
 	"log"
 	"net/http"
@@ -22,7 +23,8 @@ const (
 )
 
 const (
-	MaxTryTimes = 10000
+	MaxTryTimes        = 10000
+	MaxBackoffDuration = 10 * time.Second
 )
 
 var (
@@ -151,15 +153,17 @@ func (c *Client) start() error {
 	c.rpcConn = nil
 	c.heartCancel = make(chan struct{})
 
-	for i := 0; i < MaxTryTimes; i++ {
+	b := &backoff.Backoff{Min: 1 * time.Second, Max: MaxBackoffDuration, Factor: 2, Jitter: false}
+	for {
 		conn, _, err := c.connect()
 		if err != nil {
 			log.Println(err)
-			tm := (i + 1) * 5
-			log.Printf("Sleep %vs", tm)
-			time.Sleep(time.Duration(tm) * time.Second)
+			d := b.Duration()
+			log.Printf("Sleep %v", d)
+			time.Sleep(d)
 			continue
 		}
+		b.Reset()
 		c.conn = conn
 		break
 	}
